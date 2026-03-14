@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+output/
+*.csv
+lead_gen_log.txt
+lead_gen_progress.json
+scan_summary.txt
+.streamlit/secrets.toml
+.claude/
