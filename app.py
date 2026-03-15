@@ -364,6 +364,10 @@ def render_sidebar():
             return
 
         profile = st.session_state.profile
+        # Apply intensity slider values if set (so sidebar matches Run Scan tab)
+        if hasattr(st.session_state, "_active_grid_step"):
+            profile["grid_step"] = st.session_state._active_grid_step
+            profile["grid_extent"] = st.session_state._active_grid_extent
         cost_info = compute_cost_estimate(profile)
 
         # Cost card
@@ -558,24 +562,6 @@ def render_search_builder():
         elif preview_error:
             st.error(f"Could not parse the generated profile: {preview_error}")
 
-        # Raw code (collapsed by default)
-        with st.expander("🔧 View / Edit Raw Profile Code", expanded=False):
-            edited_code = st.text_area(
-                "profile_code_editor",
-                value=st.session_state.generated_profile_code,
-                height=350,
-                label_visibility="collapsed",
-            )
-            if edited_code != st.session_state.generated_profile_code:
-                st.session_state.generated_profile_code = edited_code
-                parsed, parse_err = _parse_generated_profile(edited_code)
-                if parsed:
-                    st.session_state._preview_profile = parsed
-                    st.session_state._preview_error = None
-                else:
-                    st.session_state._preview_profile = None
-                    st.session_state._preview_error = parse_err
-
         # Action buttons
         st.markdown("---")
         col_a, col_b, col_c = st.columns([2, 2, 1])
@@ -691,9 +677,11 @@ def render_run_scan():
                 help="How far from each area center to search."
             )
 
-    # Apply to profile
+    # Apply to profile and persist in session state
     profile["grid_step"] = active_step
     profile["grid_extent"] = active_extent
+    st.session_state._active_grid_step = active_step
+    st.session_state._active_grid_extent = active_extent
 
     # Show impact preview
     sample_area = profile["search_areas"][0]
