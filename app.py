@@ -48,6 +48,7 @@ def init_session_state():
         "google_api_key": "",
         "generated_profile_code": None,
         "scan_confirmed": False,
+        "current_tab": "search_builder",
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -551,18 +552,14 @@ def render_search_builder():
             st.subheader("📋 Generated Profile Preview")
             _render_profile_preview(preview_profile)
 
-            # Auto dry run / cost estimate
-            cost = compute_cost_estimate(preview_profile)
-            _render_cost_breakdown(cost)
-
         elif preview_error:
             st.error(f"Could not parse the generated profile: {preview_error}")
 
         # Action buttons
         st.markdown("---")
-        col_a, col_b, col_c = st.columns([2, 2, 1])
+        col_a, col_c = st.columns([3, 1])
         with col_a:
-            if st.button("✅ Accept & Load Profile", type="primary", use_container_width=True):
+            if st.button("✅ Accept & Go to Run Scan", type="primary", use_container_width=True):
                 if preview_profile:
                     st.session_state.profile = preview_profile
                     st.session_state.profile_name = preview_profile.get("name", "custom")
@@ -570,16 +567,10 @@ def render_search_builder():
                     st.session_state.dry_run_output = None
                     st.session_state.generated_profile_code = None
                     st.session_state._preview_profile = None
-                    st.success(f"Profile loaded: **{preview_profile.get('name')}**")
+                    st.session_state.current_tab = "run_scan"
                     st.rerun()
                 else:
-                    st.error("Cannot load — profile has errors. Check the raw code.")
-        with col_b:
-            if st.button("📊 Full Dry Run Details", use_container_width=True):
-                if preview_profile:
-                    with st.spinner("Computing full dry run..."):
-                        output = capture_dry_run(preview_profile)
-                        st.session_state.dry_run_output = output
+                    st.error("Cannot load — profile has errors.")
         with col_c:
             if st.button("🗑️ Discard", use_container_width=True):
                 st.session_state.generated_profile_code = None
@@ -587,30 +578,15 @@ def render_search_builder():
                 st.session_state._preview_error = None
                 st.rerun()
 
-        # Full dry run details (if requested)
-        if st.session_state.dry_run_output:
-            with st.expander("📊 Full Dry Run Output", expanded=True):
-                st.code(st.session_state.dry_run_output)
-
     # --- Active Profile Section (if already loaded) ---
     elif st.session_state.profile:
         st.divider()
-        st.subheader(f"Active Profile: {st.session_state.profile_name}")
+        st.success(f"✅ Profile loaded: **{st.session_state.profile_name}**")
+        _render_profile_preview(st.session_state.profile)
 
-        profile = st.session_state.profile
-        _render_profile_preview(profile)
-
-        cost = compute_cost_estimate(profile)
-        _render_cost_breakdown(cost)
-
-        if st.button("📊 Full Dry Run Details"):
-            with st.spinner("Computing..."):
-                output = capture_dry_run(profile)
-                st.session_state.dry_run_output = output
-
-        if st.session_state.dry_run_output:
-            with st.expander("📊 Full Dry Run Output", expanded=True):
-                st.code(st.session_state.dry_run_output)
+        if st.button("🚀 Go to Run Scan", type="primary"):
+            st.session_state.current_tab = "run_scan"
+            st.rerun()
 
     else:
         st.divider()
@@ -933,7 +909,7 @@ def render_profiles():
                     st.session_state.profile_name = selected
                     st.session_state.dry_run_output = None
                     st.session_state.claude_messages = []
-                    st.success(f"Loaded: {selected}")
+                    st.session_state.current_tab = "run_scan"
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error loading profile: {e}")
@@ -1066,24 +1042,48 @@ The AI assistant helps you generate search profiles and optimize costs. Choose o
     # Sidebar
     render_sidebar()
 
-    # Main tabs
-    tab_search, tab_run, tab_results, tab_profiles = st.tabs([
-        "🔎 Search Builder",
-        "🚀 Run Scan",
-        "📋 Results",
-        "📁 Profiles",
-    ])
+    # Navigation bar (replaces st.tabs for programmatic control)
+    has_profile = st.session_state.profile is not None
+    current = st.session_state.current_tab
 
-    with tab_search:
+    nav_cols = st.columns(4)
+    with nav_cols[0]:
+        if st.button("🔎 Search Builder", use_container_width=True,
+                      type="primary" if current == "search_builder" else "secondary"):
+            st.session_state.current_tab = "search_builder"
+            st.rerun()
+    with nav_cols[1]:
+        if st.button("🚀 Run Scan", use_container_width=True,
+                      type="primary" if current == "run_scan" else "secondary",
+                      disabled=not has_profile):
+            st.session_state.current_tab = "run_scan"
+            st.rerun()
+    with nav_cols[2]:
+        if st.button("📋 Results", use_container_width=True,
+                      type="primary" if current == "results" else "secondary",
+                      disabled=not has_profile):
+            st.session_state.current_tab = "results"
+            st.rerun()
+    with nav_cols[3]:
+        if st.button("📁 Profiles", use_container_width=True,
+                      type="primary" if current == "profiles" else "secondary"):
+            st.session_state.current_tab = "profiles"
+            st.rerun()
+
+    if not has_profile and current in ("run_scan", "results"):
+        st.session_state.current_tab = "search_builder"
+        current = "search_builder"
+
+    st.divider()
+
+    # Render active page
+    if current == "search_builder":
         render_search_builder()
-
-    with tab_run:
+    elif current == "run_scan":
         render_run_scan()
-
-    with tab_results:
+    elif current == "results":
         render_results()
-
-    with tab_profiles:
+    elif current == "profiles":
         render_profiles()
 
 
