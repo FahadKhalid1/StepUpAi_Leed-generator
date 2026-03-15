@@ -469,6 +469,7 @@ def generate_leads(profile):
             time.sleep(API_DELAY)
 
             for place in places:
+              try:
                 place_id = place.get("id", "")
 
                 # Skip duplicates
@@ -538,6 +539,11 @@ def generate_leads(profile):
                 leads.append(lead)
 
                 print(f"    + {name} ({category}) - {address}")
+              except Exception as place_err:
+                import traceback
+                print(f"  WARNING: Skipping place due to error: {place_err}")
+                print(f"  Traceback: {traceback.format_exc()}")
+                continue
 
             # Mark scan as completed
             scan_key = (round(lat, 5), round(lng, 5), search_term)
@@ -551,7 +557,9 @@ def generate_leads(profile):
                 save_progress(progress, paths)
 
     except Exception as e:
-        print(f"\n⚠️ Scan interrupted by error: {e}")
+        import traceback
+        print(f"\n⚠️ Scan interrupted by error: {type(e).__name__}: {e}")
+        print(f"  Full traceback:\n{traceback.format_exc()}")
         print("Saving any leads collected so far...")
 
     # Final save
