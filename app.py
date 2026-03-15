@@ -954,6 +954,53 @@ def main():
 
     st.title("🔍 StepUP AI - Lead Generation Tool")
 
+    # Setup guide
+    with st.expander("ℹ️ **First time? Click here for setup guide**", expanded=False):
+        st.markdown("""
+### How to get your Google Maps API Key
+
+You need a Google Maps API key with the **Places API (New)** enabled. Google gives you **$200 free credit every month** which is enough for most searches.
+
+**Step 1: Create a Google Cloud project**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Sign in with your Google account
+3. Click **Select a project** (top bar) then **New Project**
+4. Name it anything (e.g. "Lead Generator") and click **Create**
+
+**Step 2: Enable the Places API**
+1. Go to [APIs & Services > Library](https://console.cloud.google.com/apis/library)
+2. Search for **"Places API (New)"**
+3. Click on it, then click **Enable**
+
+**Step 3: Create an API Key**
+1. Go to [APIs & Services > Credentials](https://console.cloud.google.com/apis/credentials)
+2. Click **+ Create Credentials** > **API Key**
+3. Copy the key and paste it in the sidebar
+
+**Step 4: Enable Billing (required, but you get $200 free/month)**
+1. Go to [Billing](https://console.cloud.google.com/billing)
+2. Link a payment method (you won't be charged unless you exceed $200/month)
+3. The $200 monthly credit covers ~6,000 text searches + details
+
+---
+
+### AI Assistant Setup (Optional)
+
+The AI assistant helps you generate search profiles and optimize costs. Choose one:
+
+**Claude (Anthropic):**
+1. Go to [console.anthropic.com](https://console.anthropic.com/)
+2. Create an account and add credits
+3. Go to **API Keys** > create a new key
+4. Paste it in the sidebar under AI Assistant
+
+**ChatGPT (OpenAI):**
+1. Go to [platform.openai.com](https://platform.openai.com/)
+2. Create an account and add credits
+3. Go to **API Keys** > create a new key
+4. Select "ChatGPT (OpenAI)" in the sidebar dropdown and paste your key
+""")
+
     # Sidebar
     render_sidebar()
 
