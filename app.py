@@ -651,6 +651,64 @@ def render_run_scan():
         return
 
     profile = st.session_state.profile
+
+    # ---- Search Intensity Controls ----
+    st.subheader("⚡ Search Intensity")
+
+    INTENSITY_PRESETS = {
+        "🔍 Light — Quick & cheap": {"grid_step": 800, "grid_extent": 800},
+        "⚡ Standard — Balanced (default)": {"grid_step": 400, "grid_extent": 1500},
+        "🔬 Thorough — Deep scan, higher cost": {"grid_step": 200, "grid_extent": 2000},
+    }
+
+    intensity = st.select_slider(
+        "How thoroughly should each area be searched?",
+        options=list(INTENSITY_PRESETS.keys()),
+        value="⚡ Standard — Balanced (default)",
+        help="Light = fewer searches, cheaper but may miss some places. "
+             "Thorough = more searches, finds more but costs more.",
+    )
+
+    preset = INTENSITY_PRESETS[intensity]
+    active_step = preset["grid_step"]
+    active_extent = preset["grid_extent"]
+
+    # Advanced overrides
+    with st.expander("⚙️ Advanced: Custom grid settings"):
+        st.caption(
+            "**Grid step** = distance between search points (bigger = cheaper, less thorough).  \n"
+            "**Grid extent** = how far from each area center to search (bigger = wider coverage)."
+        )
+        adv_col1, adv_col2 = st.columns(2)
+        with adv_col1:
+            active_step = st.slider(
+                "Grid step (meters)", 100, 2000, active_step, step=100,
+                help="Distance between search points. Larger = fewer API calls."
+            )
+        with adv_col2:
+            active_extent = st.slider(
+                "Grid extent (meters)", 500, 5000, active_extent, step=100,
+                help="How far from each area center to search."
+            )
+
+    # Apply to profile
+    profile["grid_step"] = active_step
+    profile["grid_extent"] = active_extent
+
+    # Show impact preview
+    sample_area = profile["search_areas"][0]
+    grid_points = generate_grid_points(sample_area[0], sample_area[1], active_extent, active_step)
+    num_terms = len(profile.get("primary_searches", [])) + len(profile.get("secondary_searches", []))
+    num_areas = len(profile["search_areas"])
+    total_calls = num_areas * len(grid_points) * num_terms
+    st.info(
+        f"📐 **{len(grid_points)} grid points** per area × "
+        f"**{num_areas}** areas × **{num_terms}** search terms = "
+        f"**{total_calls:,}** total API calls"
+    )
+
+    st.divider()
+
     cost = compute_cost_estimate(profile)
 
     # ---- Step 1: Dry Run Review (always shown) ----
