@@ -30,4 +30,7 @@ SAVE_INTERVAL = 50
 PROFILES_DIR = "profiles"
 
 # Where output (CSV, progress) is stored per profile
-OUTPUT_DIR = "output"
+# Use temp dir on Streamlit Cloud (container filesystem may not be writable)
+import tempfile
+_default_output = os.path.join(tempfile.gettempdir(), "stepup_output")
+OUTPUT_DIR = os.environ.get("STEPUP_OUTPUT_DIR", _default_output)
