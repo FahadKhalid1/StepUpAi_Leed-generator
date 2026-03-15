@@ -702,6 +702,7 @@ def render_run_scan():
         if completion_flag:
             st.session_state.scan_running = False
             st.session_state.scan_complete = True
+            st.session_state.current_tab = "results"
             st.rerun()
 
         # Progress
@@ -734,6 +735,7 @@ def render_run_scan():
                 stop_flag.set()
             st.session_state.scan_running = False
             st.session_state.scan_complete = True
+            st.session_state.current_tab = "results"
             st.rerun()
 
         # Auto-refresh
