@@ -369,22 +369,11 @@ def render_sidebar():
             return
 
         profile = st.session_state.profile
-        # Apply intensity slider values if set (so sidebar matches Run Scan tab)
-        if hasattr(st.session_state, "_active_grid_step"):
-            profile["grid_step"] = st.session_state._active_grid_step
-            profile["grid_extent"] = st.session_state._active_grid_extent
-        cost_info = compute_cost_estimate(profile)
 
-        # Cost card
-        st.metric("Estimated Cost", f"${cost_info['total_cost']:.0f}")
-        if cost_info["within_free_tier"]:
-            st.success(f"Within free tier ({cost_info['total_cost'] / 200 * 100:.0f}% of $200)")
-        else:
-            st.error(f"Exceeds free tier by \\${cost_info['total_cost'] - 200:.0f}")
-
-        st.caption(f"{cost_info['total_searches']:,} total searches | "
-                   f"{cost_info['num_areas']} areas | "
-                   f"{cost_info['num_primary'] + cost_info['num_secondary']} terms")
+        st.caption(f"📍 Profile: **{profile.get('name', 'custom')}** | "
+                   f"{len(profile['search_areas'])} areas | "
+                   f"{len(profile.get('primary_searches', [])) + len(profile.get('secondary_searches', []))} terms")
+        st.caption("See **Run Scan** tab for full cost estimate.")
 
         st.divider()
 
@@ -682,11 +671,9 @@ def render_run_scan():
                 help="How far from each area center to search."
             )
 
-    # Apply to profile and persist in session state
+    # Apply to profile
     profile["grid_step"] = active_step
     profile["grid_extent"] = active_extent
-    st.session_state._active_grid_step = active_step
-    st.session_state._active_grid_extent = active_extent
 
     # Show impact preview
     sample_area = profile["search_areas"][0]
