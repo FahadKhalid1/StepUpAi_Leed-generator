@@ -338,17 +338,16 @@ def render_sidebar():
         config.GOOGLE_API_KEY = google_key
 
         st.divider()
-        st.header("🤖 AI Assistant")
+        st.header("🤖 AI Provider")
 
         provider = st.selectbox(
             "AI Provider",
             ["Claude (Anthropic)", "ChatGPT (OpenAI)"],
             index=0 if st.session_state.ai_provider == "Claude (Anthropic)" else 1,
-            help="Choose which AI powers the search builder and cost optimizer",
+            help="Choose which AI powers the Search Builder profile generation",
         )
         if provider != st.session_state.ai_provider:
             st.session_state.ai_provider = provider
-            st.session_state.ai_messages = []  # Clear chat on provider switch
 
         if provider == "Claude (Anthropic)":
             ai_key = st.text_input(
@@ -367,52 +366,12 @@ def render_sidebar():
             )
             st.session_state.openai_api_key = ai_key
 
-        st.divider()
-
-        if st.session_state.profile is None:
-            st.info("Load or create a profile to get optimization suggestions.")
-            return
-
-        profile = st.session_state.profile
-
-        st.caption(f"📍 Profile: **{profile.get('name', 'custom')}** | "
-                   f"{len(profile['search_areas'])} areas | "
-                   f"{len(profile.get('primary_searches', [])) + len(profile.get('secondary_searches', []))} terms")
-        st.caption("See **Run Scan** tab for full cost estimate.")
-
-        st.divider()
-
-        cost_info = compute_cost_estimate(profile)
-
-        # Analyze button
-        provider_name = "AI" if provider == "ChatGPT (OpenAI)" else "Claude"
-        if st.button("🔍 Analyze & Suggest Optimizations", use_container_width=True):
-            with st.spinner(f"{provider_name} is analyzing your config..."):
-                reply = ask_ai(
-                    profile, cost_info,
-                    "Analyze this profile and suggest the top ways to reduce cost while keeping lead quality high. Be specific about numbers."
-                )
-                st.session_state.ai_messages.append(
-                    {"role": "user", "content": "Analyze and suggest optimizations"}
-                )
-                st.session_state.ai_messages.append(
-                    {"role": "assistant", "content": reply}
-                )
-                st.rerun()
-
-        # Chat history
-        for msg in st.session_state.ai_messages:
-            with st.chat_message(msg["role"]):
-                st.write(msg["content"])
-
-        # Chat input
-        user_input = st.chat_input("Ask about your config...")
-        if user_input:
-            st.session_state.ai_messages.append({"role": "user", "content": user_input})
-            with st.spinner("Thinking..."):
-                reply = ask_ai(profile, cost_info, user_input)
-            st.session_state.ai_messages.append({"role": "assistant", "content": reply})
-            st.rerun()
+        if st.session_state.profile:
+            st.divider()
+            profile = st.session_state.profile
+            st.caption(f"📍 **{profile.get('name', 'custom')}** | "
+                       f"{len(profile['search_areas'])} areas | "
+                       f"{len(profile.get('primary_searches', [])) + len(profile.get('secondary_searches', []))} terms")
 
 
 # =============================================================================
