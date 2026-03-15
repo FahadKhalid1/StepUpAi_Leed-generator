@@ -333,7 +333,44 @@ def save_results(leads, profile, paths):
 
 def generate_leads(profile):
     """Main lead generation function - works with any profile."""
+    import requests as _req
+
     check_api_key()
+
+    # --- Pre-flight connectivity check ---
+    print("Running pre-flight checks...")
+    print(f"  API key: {GOOGLE_API_KEY[:8]}...{GOOGLE_API_KEY[-4:]}" if len(GOOGLE_API_KEY) > 12 else "  API key: (short key)")
+    print(f"  Python: {sys.version}")
+    print(f"  OS user: {os.environ.get('USER', 'unknown')}")
+    print(f"  HOME: {os.environ.get('HOME', 'unknown')}")
+
+    # Test basic HTTPS connectivity
+    try:
+        test_resp = _req.get("https://maps.googleapis.com", timeout=10)
+        print(f"  Network: OK (status {test_resp.status_code})")
+    except Exception as e:
+        print(f"  Network: FAILED - {type(e).__name__}: {e}")
+
+    # Test a minimal Places API call
+    try:
+        test_headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": GOOGLE_API_KEY,
+            "X-Goog-FieldMask": "places.id",
+        }
+        test_body = {
+            "textQuery": "restaurant Paris",
+            "maxResultCount": 1,
+        }
+        test_resp = _req.post(TEXT_SEARCH_URL, headers=test_headers, json=test_body, timeout=15)
+        if test_resp.status_code == 200:
+            places_count = len(test_resp.json().get("places", []))
+            print(f"  API test: OK ({places_count} place(s) returned)")
+        else:
+            print(f"  API test: HTTP {test_resp.status_code} - {test_resp.text[:200]}")
+    except Exception as e:
+        print(f"  API test: FAILED - {type(e).__name__}: {e}")
+    print()
 
     paths = get_output_paths(profile)
 
@@ -341,7 +378,7 @@ def generate_leads(profile):
     print("STEPUP AI - LEAD GENERATION TOOL")
     print(f"Profile: {profile['description']}")
     print(f"Filter: {profile['website_filter']}")
-    print(f"Output dir: {OUTPUT_DIR}")
+    print(f"Output dir: {paths['dir']}")
     print("=" * 60)
     print()
 
