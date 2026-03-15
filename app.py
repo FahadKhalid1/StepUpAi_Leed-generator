@@ -76,12 +76,17 @@ def compute_cost_estimate(profile):
     detail_cost = (detail_estimate / 1000) * 17
     total_cost = search_cost + detail_cost
 
-    # Lead estimates based on typical Google Places results
-    # Each search returns ~5-15 results, heavy overlap across grid points
-    # After deduplication, expect ~30-80 unique businesses per area
-    # Website filter and chain filter reduce further
-    unique_per_area_low = max(15, num_areas * 2)
-    unique_per_area_high = max(40, num_areas * 5)
+    # Lead estimates scaled by grid density
+    # Standard scan (49 points) finds ~30-80 unique businesses per area
+    # Fewer grid points = fewer discoveries, more = diminishing returns (overlap)
+    DEFAULT_POINTS = 49  # standard preset: step=400, extent=1500
+    density_ratio = points_per_area / DEFAULT_POINTS
+    # Diminishing returns: doubling grid points doesn't double leads
+    density_factor = max(0.25, min(density_ratio ** 0.5, 2.0))
+
+    unique_per_area_low = max(10, int(30 * density_factor))
+    unique_per_area_high = max(25, int(80 * density_factor))
+
     website_filter = profile.get("website_filter", "all")
     if website_filter == "no_website":
         filter_rate = 0.35  # ~35% of businesses lack a website
