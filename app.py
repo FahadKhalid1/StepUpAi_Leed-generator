@@ -26,7 +26,7 @@ from lead_generator import (
     load_profile, dry_run, generate_leads, generate_grid_points,
     get_output_paths, load_progress, stats as engine_stats,
 )
-from config import GOOGLE_API_KEY, PROFILES_DIR, OUTPUT_DIR
+from config import PROFILES_DIR, OUTPUT_DIR
 
 
 # =============================================================================
@@ -43,7 +43,9 @@ def init_session_state():
         "scan_complete": False,
         "claude_messages": [],
         "anthropic_api_key": "",
+        "google_api_key": "",
         "generated_profile_code": None,
+        "scan_confirmed": False,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -267,15 +269,28 @@ Rules:
 
 def render_sidebar():
     with st.sidebar:
-        st.header("🤖 Claude AI Advisor")
+        st.header("🔑 API Keys")
 
-        api_key = st.text_input(
-            "Anthropic API Key",
+        google_key = st.text_input(
+            "Google Maps API Key",
+            value=st.session_state.google_api_key,
+            type="password",
+            help="Your Google Maps API key (Places API must be enabled). Each user pays for their own usage.",
+        )
+        st.session_state.google_api_key = google_key
+        # Update the engine's API key at runtime
+        import lead_generator
+        import config
+        lead_generator.GOOGLE_API_KEY = google_key
+        config.GOOGLE_API_KEY = google_key
+
+        anthropic_key = st.text_input(
+            "Anthropic API Key (optional)",
             value=st.session_state.anthropic_api_key,
             type="password",
             help="Powers the AI search builder and cost optimizer",
         )
-        st.session_state.anthropic_api_key = api_key
+        st.session_state.anthropic_api_key = anthropic_key
 
         st.divider()
 
@@ -559,14 +574,17 @@ def render_run_scan():
         st.warning("Load a profile first from Search Builder or Profiles tab.")
         return
 
+    if not st.session_state.google_api_key:
+        st.error("🔑 Please enter your Google Maps API key in the sidebar first.")
+        return
+
     profile = st.session_state.profile
     cost = compute_cost_estimate(profile)
 
-    # Pre-scan summary
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Searches", f"{cost['total_searches']:,}")
-    col2.metric("Est. Cost", f"${cost['total_cost']:.0f}")
-    col3.metric("Website Filter", profile["website_filter"])
+    # ---- Step 1: Dry Run Review (always shown) ----
+    st.subheader("📊 Step 1: Review Cost Estimate")
+
+    _render_cost_breakdown(cost)
 
     if not cost["within_free_tier"]:
         st.warning(f"⚠️ Estimated cost (\\${cost['total_cost']:.0f}) exceeds the \\$200 free tier. "
@@ -574,16 +592,29 @@ def render_run_scan():
 
     st.divider()
 
-    # Start scan
+    # ---- Step 2: Confirm before running ----
     if not st.session_state.scan_running and not st.session_state.scan_complete:
-        if GOOGLE_API_KEY == "YOUR_API_KEY_HERE" or not GOOGLE_API_KEY:
-            st.error("Google API key not set in config.py")
-            return
+        st.subheader("🔒 Step 2: Confirm & Run")
 
-        if st.button("▶️ Start Scan", type="primary"):
+        st.warning(
+            f"⚠️ **This will make real API calls charged to your Google account.**\n\n"
+            f"- **{cost['total_searches']:,}** API calls\n"
+            f"- Estimated cost: **\\${cost['total_cost']:.2f}**\n"
+            f"- Profile: **{profile.get('name', 'unknown')}**"
+        )
+
+        confirmed = st.checkbox(
+            "I have reviewed the cost estimate above and confirm I want to proceed",
+            value=st.session_state.scan_confirmed,
+            key="scan_confirm_checkbox",
+        )
+        st.session_state.scan_confirmed = confirmed
+
+        if st.button("▶️ Start Scan", type="primary", disabled=not confirmed):
             st.session_state.scan_running = True
             st.session_state.scan_logs = []
             st.session_state.scan_complete = False
+            st.session_state.scan_confirmed = False
 
             log_queue = queue.Queue()
             completion_flag = []
