@@ -76,6 +76,22 @@ def compute_cost_estimate(profile):
     detail_cost = (detail_estimate / 1000) * 17
     total_cost = search_cost + detail_cost
 
+    # Lead estimates based on typical Google Places results
+    # Each search returns ~5-15 results, heavy overlap across grid points
+    # After deduplication, expect ~30-80 unique businesses per area
+    # Website filter and chain filter reduce further
+    unique_per_area_low = max(15, num_areas * 2)
+    unique_per_area_high = max(40, num_areas * 5)
+    website_filter = profile.get("website_filter", "all")
+    if website_filter == "no_website":
+        filter_rate = 0.35  # ~35% of businesses lack a website
+    elif website_filter == "has_website":
+        filter_rate = 0.65
+    else:
+        filter_rate = 1.0
+    leads_low = int(num_areas * unique_per_area_low * filter_rate)
+    leads_high = int(num_areas * unique_per_area_high * filter_rate)
+
     return {
         "num_areas": num_areas,
         "points_per_area": points_per_area,
@@ -86,6 +102,8 @@ def compute_cost_estimate(profile):
         "detail_cost": detail_cost,
         "total_cost": total_cost,
         "within_free_tier": total_cost <= 200,
+        "leads_low": leads_low,
+        "leads_high": leads_high,
     }
 
 
@@ -454,11 +472,12 @@ def _render_cost_breakdown(cost):
     st.markdown("---")
     st.subheader("💰 Cost Estimate (Dry Run)")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Search Areas", cost["num_areas"])
     col2.metric("Search Terms", cost["num_primary"] + cost["num_secondary"])
     col3.metric("Total API Calls", f"{cost['total_searches']:,}")
     col4.metric("Estimated Cost", f"${cost['total_cost']:.0f}")
+    col5.metric("Expected Leads", f"{cost['leads_low']}–{cost['leads_high']}")
 
     # Detailed cost table
     st.markdown(
@@ -469,8 +488,11 @@ def _render_cost_breakdown(cost):
         f"| Secondary terms | {cost['num_secondary']} |\n"
         f"| Text Search cost | \\${cost['search_cost']:.2f} |\n"
         f"| Place Details cost | \\${cost['detail_cost']:.2f} |\n"
-        f"| **Total** | **\\${cost['total_cost']:.2f}** |"
+        f"| **Total cost** | **\\${cost['total_cost']:.2f}** |\n"
+        f"| **Expected leads** | **{cost['leads_low']} – {cost['leads_high']}** |"
     )
+    st.caption("Lead estimate is approximate — actual results depend on business density in the area, "
+               "how many match your filters, and overlap between search terms.")
 
     # Free tier status
     if cost["within_free_tier"]:
