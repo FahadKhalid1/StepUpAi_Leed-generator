@@ -41,8 +41,10 @@ def init_session_state():
         "scan_running": False,
         "scan_logs": [],
         "scan_complete": False,
-        "claude_messages": [],
+        "ai_messages": [],
+        "ai_provider": "Claude (Anthropic)",
         "anthropic_api_key": "",
+        "openai_api_key": "",
         "google_api_key": "",
         "generated_profile_code": None,
         "scan_confirmed": False,
@@ -147,22 +149,28 @@ def run_scan_in_thread(profile, log_queue, completion_flag):
 
 
 # =============================================================================
-# Claude AI Functions
+# AI Functions (Claude + OpenAI)
 # =============================================================================
 
-def get_anthropic_client():
-    """Create Anthropic client from session state key."""
-    key = st.session_state.get("anthropic_api_key", "")
-    if not key:
-        return None
-    try:
-        from anthropic import Anthropic
-        return Anthropic(api_key=key)
-    except Exception:
-        return None
+def _get_ai_provider():
+    """Return current AI provider name."""
+    return st.session_state.get("ai_provider", "Claude (Anthropic)")
 
 
-def build_claude_system_prompt(profile, cost_info):
+def _get_ai_key():
+    """Return the API key for the current AI provider."""
+    provider = _get_ai_provider()
+    if provider == "ChatGPT (OpenAI)":
+        return st.session_state.get("openai_api_key", "")
+    return st.session_state.get("anthropic_api_key", "")
+
+
+def _ai_available():
+    """Check if an AI provider is configured."""
+    return bool(_get_ai_key())
+
+
+def _build_system_prompt(profile, cost_info):
     """Build system prompt with full profile context for cost optimization."""
     return f"""You are a cost optimization advisor for a Google Places API lead generation tool.
 
@@ -200,34 +208,55 @@ Give specific, actionable suggestions with estimated cost impact. Be concise (3-
 Use simple language. Format numbers clearly."""
 
 
-def ask_claude(profile, cost_info, user_message):
-    """Send message to Claude and get optimization advice."""
-    client = get_anthropic_client()
-    if not client:
-        return "Please enter your Anthropic API key in the sidebar."
+def _call_ai(system_prompt, messages, max_tokens=1024):
+    """Send messages to the configured AI provider. Returns response text or error string."""
+    provider = _get_ai_provider()
+    key = _get_ai_key()
 
-    system = build_claude_system_prompt(profile, cost_info)
+    if not key:
+        return f"Please enter your {provider} API key in the sidebar."
 
-    messages = list(st.session_state.claude_messages)
+    if provider == "ChatGPT (OpenAI)":
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=key)
+            oai_messages = [{"role": "system", "content": system_prompt}] + messages
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                max_tokens=max_tokens,
+                messages=oai_messages,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"OpenAI Error: {e}"
+    else:
+        try:
+            from anthropic import Anthropic
+            client = Anthropic(api_key=key)
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=messages,
+            )
+            return response.content[0].text
+        except Exception as e:
+            return f"Anthropic Error: {e}"
+
+
+def ask_ai(profile, cost_info, user_message):
+    """Send message to AI and get optimization advice."""
+    system = _build_system_prompt(profile, cost_info)
+    messages = list(st.session_state.ai_messages)
     messages.append({"role": "user", "content": user_message})
-
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1024,
-            system=system,
-            messages=messages,
-        )
-        return response.content[0].text
-    except Exception as e:
-        return f"Error: {e}"
+    return _call_ai(system, messages)
 
 
 def generate_profile_from_nl(description):
-    """Use Claude to turn natural language into a PROFILE dict."""
-    client = get_anthropic_client()
-    if not client:
-        return None, "Please enter your Anthropic API key first."
+    """Use AI to turn natural language into a PROFILE dict."""
+    if not _ai_available():
+        provider = _get_ai_provider()
+        return None, f"Please enter your {provider} API key in the sidebar first."
 
     template_path = os.path.join(PROFILES_DIR, "_template.py")
     with open(template_path, "r") as f:
@@ -251,16 +280,12 @@ Rules:
 - Keep grid_step and grid_extent conservative to manage costs
 - DO NOT include any import statements or helper functions, just the PROFILE = {{ ... }} dict"""
 
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=4096,
-            system=system,
-            messages=[{"role": "user", "content": description}],
-        )
-        return response.content[0].text, None
-    except Exception as e:
-        return None, str(e)
+    messages = [{"role": "user", "content": description}]
+    result = _call_ai(system, messages, max_tokens=4096)
+
+    if result.startswith("OpenAI Error:") or result.startswith("Anthropic Error:") or result.startswith("Please enter"):
+        return None, result
+    return result, None
 
 
 # =============================================================================
@@ -284,13 +309,35 @@ def render_sidebar():
         lead_generator.GOOGLE_API_KEY = google_key
         config.GOOGLE_API_KEY = google_key
 
-        anthropic_key = st.text_input(
-            "Anthropic API Key (optional)",
-            value=st.session_state.anthropic_api_key,
-            type="password",
-            help="Powers the AI search builder and cost optimizer",
+        st.divider()
+        st.header("🤖 AI Assistant")
+
+        provider = st.selectbox(
+            "AI Provider",
+            ["Claude (Anthropic)", "ChatGPT (OpenAI)"],
+            index=0 if st.session_state.ai_provider == "Claude (Anthropic)" else 1,
+            help="Choose which AI powers the search builder and cost optimizer",
         )
-        st.session_state.anthropic_api_key = anthropic_key
+        if provider != st.session_state.ai_provider:
+            st.session_state.ai_provider = provider
+            st.session_state.ai_messages = []  # Clear chat on provider switch
+
+        if provider == "Claude (Anthropic)":
+            ai_key = st.text_input(
+                "Anthropic API Key",
+                value=st.session_state.anthropic_api_key,
+                type="password",
+                help="Get one at console.anthropic.com",
+            )
+            st.session_state.anthropic_api_key = ai_key
+        else:
+            ai_key = st.text_input(
+                "OpenAI API Key",
+                value=st.session_state.openai_api_key,
+                type="password",
+                help="Get one at platform.openai.com",
+            )
+            st.session_state.openai_api_key = ai_key
 
         st.divider()
 
@@ -315,32 +362,33 @@ def render_sidebar():
         st.divider()
 
         # Analyze button
+        provider_name = "AI" if provider == "ChatGPT (OpenAI)" else "Claude"
         if st.button("🔍 Analyze & Suggest Optimizations", use_container_width=True):
-            with st.spinner("Claude is analyzing your config..."):
-                reply = ask_claude(
+            with st.spinner(f"{provider_name} is analyzing your config..."):
+                reply = ask_ai(
                     profile, cost_info,
                     "Analyze this profile and suggest the top ways to reduce cost while keeping lead quality high. Be specific about numbers."
                 )
-                st.session_state.claude_messages.append(
+                st.session_state.ai_messages.append(
                     {"role": "user", "content": "Analyze and suggest optimizations"}
                 )
-                st.session_state.claude_messages.append(
+                st.session_state.ai_messages.append(
                     {"role": "assistant", "content": reply}
                 )
                 st.rerun()
 
         # Chat history
-        for msg in st.session_state.claude_messages:
+        for msg in st.session_state.ai_messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
         # Chat input
-        user_input = st.chat_input("Ask Claude about your config...")
+        user_input = st.chat_input("Ask about your config...")
         if user_input:
-            st.session_state.claude_messages.append({"role": "user", "content": user_input})
+            st.session_state.ai_messages.append({"role": "user", "content": user_input})
             with st.spinner("Thinking..."):
-                reply = ask_claude(profile, cost_info, user_input)
-            st.session_state.claude_messages.append({"role": "assistant", "content": reply})
+                reply = ask_ai(profile, cost_info, user_input)
+            st.session_state.ai_messages.append({"role": "assistant", "content": reply})
             st.rerun()
 
 
@@ -448,10 +496,12 @@ def render_search_builder():
     )
 
     if st.button("✨ Generate Profile with AI", type="primary", disabled=not nl_input):
-        if not st.session_state.anthropic_api_key:
-            st.error("Please enter your Anthropic API key in the sidebar first.")
+        if not _ai_available():
+            provider = _get_ai_provider()
+            st.error(f"Please enter your {provider} API key in the sidebar first.")
         else:
-            with st.spinner("🤖 Claude is generating your search profile..."):
+            provider_name = "ChatGPT" if _get_ai_provider() == "ChatGPT (OpenAI)" else "Claude"
+            with st.spinner(f"🤖 {provider_name} is generating your search profile..."):
                 result, error = generate_profile_from_nl(nl_input)
                 if error:
                     st.error(error)
