@@ -377,6 +377,8 @@ def render_sidebar():
 
         st.divider()
 
+        cost_info = compute_cost_estimate(profile)
+
         # Analyze button
         provider_name = "AI" if provider == "ChatGPT (OpenAI)" else "Claude"
         if st.button("🔍 Analyze & Suggest Optimizations", use_container_width=True):
