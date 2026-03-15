@@ -191,7 +191,11 @@ def extract_district(address, profile):
 
     match = re.search(pattern, address)
     if match:
-        raw = match.group(1)
+        # Use capture group 1 if available, otherwise use the full match
+        try:
+            raw = match.group(1)
+        except IndexError:
+            raw = match.group(0)
         fmt = profile.get("district_format", "{num}")
         try:
             num = int(raw)
