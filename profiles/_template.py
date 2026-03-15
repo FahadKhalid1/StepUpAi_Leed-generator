@@ -106,6 +106,7 @@ PROFILE = {
         ("Address", "formattedAddress"),
         ("District", "district"),
         ("Phone Number", "internationalPhoneNumber"),
+        ("Website", "websiteUri"),
         ("Rating", "rating"),
         ("Total Reviews", "userRatingCount"),
         ("Google Maps URL", "googleMapsUri"),
