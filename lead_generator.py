@@ -387,7 +387,15 @@ def generate_leads(profile):
     category_keywords = profile.get("category_keywords", {})
     website_filter = profile.get("website_filter", "no_website")
 
+    # Check for external stop flag (set by Streamlit UI)
+    stop_flag = profile.get("_stop_flag")
+
     for idx, (lat, lng, search_term, area_name, priority) in enumerate(all_searches):
+        # Check if stop was requested
+        if stop_flag and stop_flag.is_set():
+            print("\n⏹️ Scan stopped by user.")
+            break
+
         # Progress header
         if area_name != current_area or search_term != current_search:
             current_area = area_name

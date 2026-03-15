@@ -154,12 +154,15 @@ class LogCapture:
         self.original.flush()
 
 
-def run_scan_in_thread(profile, log_queue, completion_flag):
+def run_scan_in_thread(profile, log_queue, completion_flag, stop_flag):
     """Run generate_leads() in a background thread."""
     import lead_generator
     # Reset stats
     for k in lead_generator.stats:
         lead_generator.stats[k] = 0
+
+    # Inject stop flag into profile so the scan loop can check it
+    profile["_stop_flag"] = stop_flag
 
     old_stdout = sys.stdout
     sys.stdout = LogCapture(log_queue, old_stdout)
@@ -169,6 +172,7 @@ def run_scan_in_thread(profile, log_queue, completion_flag):
         log_queue.put(f"ERROR: {e}")
     finally:
         sys.stdout = old_stdout
+        profile.pop("_stop_flag", None)
         completion_flag.append(True)
 
 
@@ -706,14 +710,16 @@ def render_run_scan():
 
             log_queue = queue.Queue()
             completion_flag = []
+            stop_flag = threading.Event()
 
             # Store in session
             st.session_state._log_queue = log_queue
             st.session_state._completion_flag = completion_flag
+            st.session_state._stop_flag = stop_flag
 
             thread = threading.Thread(
                 target=run_scan_in_thread,
-                args=(profile, log_queue, completion_flag),
+                args=(profile, log_queue, completion_flag, stop_flag),
                 daemon=True,
             )
             thread.start()
@@ -763,7 +769,13 @@ def render_run_scan():
         with st.container(height=400):
             st.code("\n".join(st.session_state.scan_logs[-80:]))
 
-        st.button("⏹️ Stop Scan (press Ctrl+C in terminal to force stop)")
+        if st.button("⏹️ Stop Scan", type="primary"):
+            stop_flag = getattr(st.session_state, "_stop_flag", None)
+            if stop_flag:
+                stop_flag.set()
+            st.session_state.scan_running = False
+            st.session_state.scan_complete = True
+            st.rerun()
 
         # Auto-refresh
         time.sleep(2)
