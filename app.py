@@ -530,6 +530,11 @@ def render_search_builder():
                     st.session_state.dry_run_output = None
                     st.session_state.generated_profile_code = None
                     st.session_state._preview_profile = None
+                    # Reset scan state so user must confirm before running
+                    st.session_state.scan_running = False
+                    st.session_state.scan_complete = False
+                    st.session_state.scan_confirmed = False
+                    st.session_state.scan_logs = []
                     st.session_state.current_tab = "run_scan"
                     st.rerun()
                 else:
@@ -882,6 +887,11 @@ def render_profiles():
                     st.session_state.profile_name = selected
                     st.session_state.dry_run_output = None
                     st.session_state.claude_messages = []
+                    # Reset scan state so user must confirm before running
+                    st.session_state.scan_running = False
+                    st.session_state.scan_complete = False
+                    st.session_state.scan_confirmed = False
+                    st.session_state.scan_logs = []
                     st.session_state.current_tab = "run_scan"
                     st.rerun()
                 except Exception as e:

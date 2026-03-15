@@ -66,8 +66,15 @@ def load_profile(profile_name):
 
 def get_output_paths(profile):
     """Return output paths for a profile."""
+    import tempfile
+
     out_dir = os.path.join(OUTPUT_DIR, profile["name"])
-    os.makedirs(out_dir, exist_ok=True)
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except OSError:
+        # Fallback to system temp dir if primary path fails (e.g. Streamlit Cloud)
+        out_dir = os.path.join(tempfile.gettempdir(), "stepup_output", profile["name"])
+        os.makedirs(out_dir, exist_ok=True)
     return {
         "dir": out_dir,
         "csv": os.path.join(out_dir, "leads.csv"),
@@ -253,6 +260,9 @@ def search_nearby(lat, lng, keyword, profile):
     except requests.exceptions.RequestException as e:
         print(f"  Network error: {e}")
         return []
+    except Exception as e:
+        print(f"  Unexpected error in search: {e}")
+        return []
 
 
 def get_place_details(place_id):
@@ -280,6 +290,9 @@ def get_place_details(place_id):
             return None
     except requests.exceptions.RequestException as e:
         print(f"  Network error: {e}")
+        return None
+    except Exception as e:
+        print(f"  Unexpected error in details: {e}")
         return None
 
 
@@ -328,6 +341,7 @@ def generate_leads(profile):
     print("STEPUP AI - LEAD GENERATION TOOL")
     print(f"Profile: {profile['description']}")
     print(f"Filter: {profile['website_filter']}")
+    print(f"Output dir: {OUTPUT_DIR}")
     print("=" * 60)
     print()
 
@@ -390,105 +404,118 @@ def generate_leads(profile):
     # Check for external stop flag (set by Streamlit UI)
     stop_flag = profile.get("_stop_flag")
 
-    for idx, (lat, lng, search_term, area_name, priority) in enumerate(all_searches):
-        # Check if stop was requested
-        if stop_flag and stop_flag.is_set():
-            print("\n⏹️ Scan stopped by user.")
-            break
+    try:
+        for idx, (lat, lng, search_term, area_name, priority) in enumerate(all_searches):
+            # Check if stop was requested
+            if stop_flag and stop_flag.is_set():
+                print("\n⏹️ Scan stopped by user.")
+                break
 
-        # Progress header
-        if area_name != current_area or search_term != current_search:
-            current_area = area_name
-            current_search = search_term
-            elapsed = time.time() - start_time
-            print(f"\n[{idx + 1}/{total_searches}] {area_name} - Searching: {search_term}")
-            print(f"  Stats: {stats['leads_generated']} leads | "
-                  f"{stats['businesses_found']} checked | "
-                  f"{stats['chains_filtered']} chains filtered | "
-                  f"{stats['api_calls']} API calls | "
-                  f"{elapsed:.0f}s elapsed")
+            # Progress header
+            if area_name != current_area or search_term != current_search:
+                current_area = area_name
+                current_search = search_term
+                elapsed = time.time() - start_time
+                print(f"\n[{idx + 1}/{total_searches}] {area_name} - Searching: {search_term}")
+                print(f"  Stats: {stats['leads_generated']} leads | "
+                      f"{stats['businesses_found']} checked | "
+                      f"{stats['chains_filtered']} chains filtered | "
+                      f"{stats['api_calls']} API calls | "
+                      f"{elapsed:.0f}s elapsed")
 
-        # Search
-        places = search_nearby(lat, lng, search_term, profile)
-        time.sleep(API_DELAY)
-
-        for place in places:
-            place_id = place.get("id", "")
-
-            # Skip duplicates
-            if place_id in seen_place_ids:
-                stats["duplicates_skipped"] += 1
-                continue
-
-            seen_place_ids.add(place_id)
-
-            name = place.get("displayName", {}).get("text", "Unknown")
-            types = place.get("types", [])
-
-            # Skip chains
-            if is_chain(name, blocklist):
-                stats["chains_filtered"] += 1
-                continue
-
-            stats["businesses_found"] += 1
-
-            # Get details
-            details = get_place_details(place_id)
+            # Search
+            try:
+                places = search_nearby(lat, lng, search_term, profile)
+            except Exception as e:
+                print(f"  ERROR in search call: {e}")
+                places = []
             time.sleep(API_DELAY)
 
-            if details is None:
-                continue
+            for place in places:
+                place_id = place.get("id", "")
 
-            website = details.get("websiteUri", "")
+                # Skip duplicates
+                if place_id in seen_place_ids:
+                    stats["duplicates_skipped"] += 1
+                    continue
 
-            # Apply website filter
-            if website_filter == "no_website" and website:
-                continue  # Skip businesses WITH websites
-            elif website_filter == "has_website" and not website:
-                continue  # Skip businesses WITHOUT websites
-            # "all" keeps everything
+                seen_place_ids.add(place_id)
 
-            stats["leads_generated"] += 1
+                name = place.get("displayName", {}).get("text", "Unknown")
+                types = place.get("types", [])
 
-            address = details.get("formattedAddress", "")
-            category = classify_category(name, types, category_keywords)
-            detected_priority = priority
-            if priority == "Secondary" and category != "Other" and category != "Uncategorized":
-                detected_priority = "Primary"
+                # Skip chains
+                if is_chain(name, blocklist):
+                    stats["chains_filtered"] += 1
+                    continue
 
-            # Build lead data
-            detail_data = {
-                "displayName": details.get("displayName", {}).get("text", name),
-                "category": category,
-                "priority": detected_priority,
-                "formattedAddress": address,
-                "district": extract_district(address, profile),
-                "internationalPhoneNumber": details.get("internationalPhoneNumber", ""),
-                "websiteUri": website,
-                "rating": details.get("rating", ""),
-                "userRatingCount": details.get("userRatingCount", ""),
-                "googleMapsUri": details.get("googleMapsUri", ""),
-                "place_id": place_id,
-            }
+                stats["businesses_found"] += 1
 
-            # Map to CSV columns
-            lead = {}
-            for col_header, data_key in profile["csv_columns"]:
-                lead[col_header] = detail_data.get(data_key, "")
-            leads.append(lead)
+                # Get details
+                try:
+                    details = get_place_details(place_id)
+                except Exception as e:
+                    print(f"  ERROR in details call: {e}")
+                    details = None
+                time.sleep(API_DELAY)
 
-            print(f"    + {name} ({category}) - {address}")
+                if details is None:
+                    continue
 
-        # Mark scan as completed
-        scan_key = (round(lat, 5), round(lng, 5), search_term)
-        completed_scans.add(scan_key)
+                website = details.get("websiteUri", "")
 
-        # Periodic save
-        if stats["leads_generated"] > 0 and stats["leads_generated"] % SAVE_INTERVAL == 0:
-            save_results(leads, profile, paths)
-            progress["seen_place_ids"] = list(seen_place_ids)
-            progress["completed_scans"] = [list(s) for s in completed_scans]
-            save_progress(progress, paths)
+                # Apply website filter
+                if website_filter == "no_website" and website:
+                    continue  # Skip businesses WITH websites
+                elif website_filter == "has_website" and not website:
+                    continue  # Skip businesses WITHOUT websites
+                # "all" keeps everything
+
+                stats["leads_generated"] += 1
+
+                address = details.get("formattedAddress", "")
+                category = classify_category(name, types, category_keywords)
+                detected_priority = priority
+                if priority == "Secondary" and category != "Other" and category != "Uncategorized":
+                    detected_priority = "Primary"
+
+                # Build lead data
+                detail_data = {
+                    "displayName": details.get("displayName", {}).get("text", name),
+                    "category": category,
+                    "priority": detected_priority,
+                    "formattedAddress": address,
+                    "district": extract_district(address, profile),
+                    "internationalPhoneNumber": details.get("internationalPhoneNumber", ""),
+                    "websiteUri": website,
+                    "rating": details.get("rating", ""),
+                    "userRatingCount": details.get("userRatingCount", ""),
+                    "googleMapsUri": details.get("googleMapsUri", ""),
+                    "place_id": place_id,
+                }
+
+                # Map to CSV columns
+                lead = {}
+                for col_header, data_key in profile["csv_columns"]:
+                    lead[col_header] = detail_data.get(data_key, "")
+                leads.append(lead)
+
+                print(f"    + {name} ({category}) - {address}")
+
+            # Mark scan as completed
+            scan_key = (round(lat, 5), round(lng, 5), search_term)
+            completed_scans.add(scan_key)
+
+            # Periodic save
+            if stats["leads_generated"] > 0 and stats["leads_generated"] % SAVE_INTERVAL == 0:
+                save_results(leads, profile, paths)
+                progress["seen_place_ids"] = list(seen_place_ids)
+                progress["completed_scans"] = [list(s) for s in completed_scans]
+                save_progress(progress, paths)
+
+    except Exception as e:
+        print(f"\n⚠️ Scan interrupted by error: {e}")
+        print("Saving any leads collected so far...")
 
     # Final save
     save_results(leads, profile, paths)
